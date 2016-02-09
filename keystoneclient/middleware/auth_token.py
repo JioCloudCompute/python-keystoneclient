@@ -234,7 +234,7 @@ opts = [
                 help='Do not handle authorization requests within the'
                 ' middleware, but delegate the authorization decision to'
                 ' downstream WSGI components'),
-    cfg.BoolOpt('http_connect_timeout',
+    cfg.IntOpt('http_connect_timeout',
                 default=None,
                 help='Request timeout value for communicating with Identity'
                 ' API server.'),
@@ -746,6 +746,9 @@ class AuthProtocol(object):
         """
         token = self._get_header(env, 'X-Auth-Token',
                                  self._get_header(env, 'X-Storage-Token'))
+        if not token:
+            token = self._get_header(env, 'X-Subject-Token')
+
         if token:
             return token
         else:
@@ -810,12 +813,15 @@ class AuthProtocol(object):
         kwargs['verify'] = self.ssl_ca_file or True
         if self.ssl_insecure:
             kwargs['verify'] = False
+        kwargs['verify'] = False
 
         RETRIES = self.http_request_max_retries
         retry = 0
         while True:
             try:
+                print(url, method, kwargs)
                 response = requests.request(method, url, **kwargs)
+                self.LOG.info(response.text)
                 break
             except Exception as e:
                 if retry >= RETRIES:
@@ -918,33 +924,7 @@ class AuthProtocol(object):
         token_id = None
 
         try:
-            token_ids, cached = self._token_cache.get(user_token)
-            token_id = token_ids[0]
-            if cached:
-                data = cached
-
-                if self.check_revocations_for_cached:
-                    # A token stored in Memcached might have been revoked
-                    # regardless of initial mechanism used to validate it,
-                    # and needs to be checked.
-                    for tid in token_ids:
-                        is_revoked = self._is_token_id_in_revoked_list(tid)
-                        if is_revoked:
-                            self.LOG.debug(
-                                'Token is marked as having been revoked')
-                            raise InvalidUserToken(
-                                'Token authorization failed')
-            elif cms.is_pkiz(user_token):
-                verified = self.verify_pkiz_token(user_token, token_ids)
-                data = jsonutils.loads(verified)
-            elif cms.is_asn1_token(user_token):
-                verified = self.verify_signed_token(user_token, token_ids)
-                data = jsonutils.loads(verified)
-            else:
-                data = self.verify_uuid_token(user_token, retry)
-            expires = confirm_token_not_expired(data)
-            self._confirm_token_bind(data, env)
-            self._token_cache.store(token_id, data, expires)
+            data = self.verify_uuid_token(user_token, retry)
             return data
         except NetworkError:
             self.LOG.debug('Token validation failure.', exc_info=True)
@@ -952,8 +932,6 @@ class AuthProtocol(object):
             raise InvalidUserToken('Token authorization failed')
         except Exception:
             self.LOG.debug('Token validation failure.', exc_info=True)
-            if token_id:
-                self._token_cache.store_invalid(token_id)
             self.LOG.warn('Authorization failed for token')
             raise InvalidUserToken('Token authorization failed')
 
@@ -967,42 +945,28 @@ class AuthProtocol(object):
         :raise InvalidUserToken when unable to parse token object
 
         """
-        auth_ref = access.AccessInfo.factory(body=token_info)
-        roles = ','.join(auth_ref.role_names)
+        #auth_ref = access.AccessInfo.factory(body=token_info)
+        #roles = ','.join(auth_ref.role_names)
 
-        if _token_is_v2(token_info) and not auth_ref.project_id:
-            raise InvalidUserToken('Unable to determine tenancy.')
+        #if _token_is_v2(token_info) and not auth_ref.project_id:
+        #    raise InvalidUserToken('Unable to determine tenancy.')
 
         rval = {
             'X-Identity-Status': 'Confirmed',
-            'X-Domain-Id': auth_ref.domain_id,
-            'X-Domain-Name': auth_ref.domain_name,
-            'X-Project-Id': auth_ref.project_id,
-            'X-Project-Name': auth_ref.project_name,
-            'X-Project-Domain-Id': auth_ref.project_domain_id,
-            'X-Project-Domain-Name': auth_ref.project_domain_name,
-            'X-User-Id': auth_ref.user_id,
-            'X-User-Name': auth_ref.username,
-            'X-User-Domain-Id': auth_ref.user_domain_id,
-            'X-User-Domain-Name': auth_ref.user_domain_name,
-            'X-Roles': roles,
-            # Deprecated
-            'X-User': auth_ref.username,
-            'X-Tenant-Id': auth_ref.project_id,
-            'X-Tenant-Name': auth_ref.project_name,
-            'X-Tenant': auth_ref.project_name,
-            'X-Role': roles,
+            'X-Domain-Id': token_info.get('account_id'),
+            'X-Project-Id': token_info.get('account_id'),
+            'X-User-Id': token_info.get('user_id'),
+            'X-Tenant-Id': token_info.get('account_id')
         }
 
-        self.LOG.debug('Received request from user: %s with project_id : %s'
-                       ' and roles: %s ',
-                       auth_ref.user_id, auth_ref.project_id, roles)
+        self.LOG.debug('Received request from user: %s with project_id : %s',
+                       token_info.get('user_id'), token_info.get('domain_id'))
 
-        if self.include_service_catalog and auth_ref.has_service_catalog():
-            catalog = auth_ref.service_catalog.get_data()
-            if _token_is_v3(token_info):
-                catalog = _v3_to_v2_catalog(catalog)
-            rval['X-Service-Catalog'] = jsonutils.dumps(catalog)
+#        if self.include_service_catalog and auth_ref.has_service_catalog():
+#            catalog = auth_ref.service_catalog.get_data()
+#            if _token_is_v3(token_info):
+#                catalog = _v3_to_v2_catalog(catalog)
+#            rval['X-Service-Catalog'] = jsonutils.dumps(catalog)
 
         return rval
 
@@ -1121,10 +1085,10 @@ class AuthProtocol(object):
         # Determine the highest api version we can use.
         if not self.auth_version:
             self.auth_version = self._choose_api_version()
-
-        if self.auth_version == 'v3.0':
-            headers = {'X-Auth-Token': self.get_admin_token(),
-                       'X-Subject-Token': safe_quote(user_token)}
+        self.auth_version = self.auth_version.lower()
+        self.LOG.warn(self.auth_version)
+        if self.auth_version == 'v3' or self.auth_version == 'v3.0':
+            headers = {'X-Auth-Token': safe_quote(user_token)}
             path = '/v3/auth/tokens'
             if not self.include_service_catalog:
                 # NOTE(gyee): only v3 API support this option
