@@ -813,7 +813,6 @@ class AuthProtocol(object):
         kwargs['verify'] = self.ssl_ca_file or True
         if self.ssl_insecure:
             kwargs['verify'] = False
-        kwargs['verify'] = False
 
         RETRIES = self.http_request_max_retries
         retry = 0
