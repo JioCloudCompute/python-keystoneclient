@@ -820,7 +820,6 @@ class AuthProtocol(object):
             try:
                 print(url, method, kwargs)
                 response = requests.request(method, url, **kwargs)
-                self.LOG.info(response.text)
                 break
             except Exception as e:
                 if retry >= RETRIES:
