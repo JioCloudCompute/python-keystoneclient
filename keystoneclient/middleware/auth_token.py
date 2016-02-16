@@ -818,7 +818,6 @@ class AuthProtocol(object):
         retry = 0
         while True:
             try:
-                print(url, method, kwargs)
                 response = requests.request(method, url, **kwargs)
                 break
             except Exception as e:
@@ -943,11 +942,6 @@ class AuthProtocol(object):
         :raise InvalidUserToken when unable to parse token object
 
         """
-        #auth_ref = access.AccessInfo.factory(body=token_info)
-        #roles = ','.join(auth_ref.role_names)
-
-        #if _token_is_v2(token_info) and not auth_ref.project_id:
-        #    raise InvalidUserToken('Unable to determine tenancy.')
 
         rval = {
             'X-Identity-Status': 'Confirmed',
@@ -958,13 +952,7 @@ class AuthProtocol(object):
         }
 
         self.LOG.debug('Received request from user: %s with project_id : %s',
-                       token_info.get('user_id'), token_info.get('domain_id'))
-
-#        if self.include_service_catalog and auth_ref.has_service_catalog():
-#            catalog = auth_ref.service_catalog.get_data()
-#            if _token_is_v3(token_info):
-#                catalog = _v3_to_v2_catalog(catalog)
-#            rval['X-Service-Catalog'] = jsonutils.dumps(catalog)
+                       token_info.get('user_id'), token_info.get('account_id'))
 
         return rval
 
@@ -1084,7 +1072,6 @@ class AuthProtocol(object):
         if not self.auth_version:
             self.auth_version = self._choose_api_version()
         self.auth_version = self.auth_version.lower()
-        self.LOG.warn(self.auth_version)
         if self.auth_version == 'v3' or self.auth_version == 'v3.0':
             headers = {'X-Auth-Token': safe_quote(user_token)}
             path = '/v3/auth/tokens'
