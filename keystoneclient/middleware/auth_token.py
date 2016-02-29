@@ -677,7 +677,6 @@ class AuthProtocol(object):
 
         """
         self.LOG.debug('Authenticating user token')
-
         self._token_cache.initialize(env)
 
         try:
@@ -1074,13 +1073,15 @@ class AuthProtocol(object):
         self.auth_version = self.auth_version.lower()
         if self.auth_version == 'v3' or self.auth_version == 'v3.0':
             headers = {'X-Auth-Token': safe_quote(user_token)}
-            path = '/v3/auth/tokens'
+            path = '/v3/token-auth'
             if not self.include_service_catalog:
                 # NOTE(gyee): only v3 API support this option
                 path = path + '?nocatalog'
+            body = {'action_resource_list': []}
             response, data = self._json_request(
-                'GET',
+                'POST',
                 path,
+                body=body,
                 additional_headers=headers)
         else:
             headers = {'X-Auth-Token': self.get_admin_token()}
