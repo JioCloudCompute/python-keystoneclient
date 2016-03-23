@@ -1073,7 +1073,7 @@ class AuthProtocol(object):
         self.auth_version = self.auth_version.lower()
         if self.auth_version == 'v3' or self.auth_version == 'v3.0':
             headers = {'X-Auth-Token': safe_quote(user_token)}
-            path = '/v3/token-auth'
+            path = '/token-auth'
             if not self.include_service_catalog:
                 # NOTE(gyee): only v3 API support this option
                 path = path + '?nocatalog'
