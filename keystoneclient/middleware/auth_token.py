@@ -682,12 +682,9 @@ class AuthProtocol(object):
         try:
             self._remove_auth_headers(env)
             user_token = self._get_user_token_from_header(env)
-            if user_token:
-                 token_info = self._validate_user_token(user_token, env)
-                 env['keystone.token_info'] = token_info
-                 user_headers = self._build_user_headers(token_info)
-            else :
-                 user_headers =self._get_info_from_account(env)
+            token_info = self._validate_user_token(user_token, env)
+            env['keystone.token_info'] = token_info
+            user_headers = self._build_user_headers(token_info)
             self._add_headers(env, user_headers)
             return self.app(env, start_response)
 
@@ -706,18 +703,6 @@ class AuthProtocol(object):
             resp = MiniResp('Service unavailable', env)
             start_response('503 Service Unavailable', resp.headers)
             return resp.body
-
-    def _get_info_from_account(self,env):
-        user_id=None
-        if "HTTP_USER_ID" in env and env["HTTP_USER_ID"] !=None:
-             user_id=env["HTTP_USER_ID"]
-        else:
-             raise InvalidUserToken("USER_ID not specified")
-        if "HTTP_PROJECT_ID" in env and env["HTTP_PROJECT_ID"] !=None:
-             project_id=env["HTTP_PROJECT_ID"]
-        else:
-             raise InvalidUserToken("PROJECT_ID not specified")
-        return self._build_user_headers_account_info(project_id,user_id) 
 
     def _remove_auth_headers(self, env):
         """Remove headers so a user can't fake authentication.
@@ -765,12 +750,12 @@ class AuthProtocol(object):
 
         if token:
             return token
-        #else:
-        #    if not self.delay_auth_decision:
-        #        self.LOG.warn('Unable to find authentication token'
-        #                      ' in headers')
-        #        self.LOG.debug('Headers: %s', env)
-        #    raise InvalidUserToken('Unable to find token in headers')
+        else:
+            if not self.delay_auth_decision:
+                self.LOG.warn('Unable to find authentication token'
+                              ' in headers')
+                self.LOG.debug('Headers: %s', env)
+            raise InvalidUserToken('Unable to find token in headers')
 
     def _reject_request(self, env, start_response):
         """Redirect client to auth server.
@@ -967,30 +952,6 @@ class AuthProtocol(object):
 
         self.LOG.debug('Received request from user: %s with project_id : %s',
                        token_info.get('user_id'), token_info.get('account_id'))
-
-        return rval
-
-    def _build_user_headers_account_info(self, account_id,user_id):
-        """Convert token object into headers.
-
-        Build headers that represent authenticated user - see main
-        doc info at start of file for details of headers to be defined.
-
-        :param token_info: token object returned by keystone on authentication
-        :raise InvalidUserToken when unable to parse token object
-
-        """
-
-        rval = {
-            'X-Identity-Status': 'Confirmed',
-            'X-Domain-Id': account_id,
-            'X-Project-Id': account_id,
-            'X-User-Id': user_id,
-            'X-Tenant-Id': account_id
-        }
-
-        self.LOG.debug('Received request from user: %s with project_id : %s',
-                       user_id, account_id)
 
         return rval
 
